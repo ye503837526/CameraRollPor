@@ -525,7 +525,7 @@ public static class NativeGallery
 		return result;
 	}
 
-	private static byte[] GetTextureBytes( Texture2D texture, bool isJpeg )
+	public static byte[] GetTextureBytes( Texture2D texture, bool isJpeg )
 	{
 		try
 		{

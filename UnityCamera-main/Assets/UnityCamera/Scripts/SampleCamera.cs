@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using System.IO;
+using UnityEngine;
 using UnityEngine.UI;
 
 public class SampleCamera : MonoBehaviour
@@ -79,6 +80,7 @@ public class SampleCamera : MonoBehaviour
 
                 croppedImageSizeText.enabled = true;
                 croppedImageSizeText.text = "Image size: " + croppedImage.width + ", " + croppedImage.height;
+                SvaeIamgeToLocal(croppedImage);
             }
             else
             {
@@ -104,5 +106,12 @@ public class SampleCamera : MonoBehaviour
                     //width /= 2;
                     //height /= 2;
                 });
+    }
+    private string LoaclTexturePath { get { return Application.persistentDataPath + "/CamearCutIamge.png"; } }
+    public void SvaeIamgeToLocal(Texture2D texture)
+    {
+        byte[] bytes = NativeGallery.GetTextureBytes(texture, false);
+        Debug.Log("开始储存图片... Path:"+ LoaclTexturePath);
+        File.WriteAllBytes(LoaclTexturePath, bytes);
     }
 }

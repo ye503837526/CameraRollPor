@@ -256,36 +256,19 @@ static int imagePickerState = 0; // 0 -> none, 1 -> showing, 2 -> finished
 	return [self getCString:[NSString stringWithFormat:@"%d>%d>%lld>%f", (int)roundf(size.width), (int)roundf(size.height), duration, rotation]];
 }
 
-+ (UIImage *)scaleImage:(UIImage *)image maxSize:(int)maxSize {
-	CGFloat width = image.size.width;
-	CGFloat height = image.size.height;
-	
-	UIImageOrientation orientation = image.imageOrientation;
-	if (width <= maxSize && height <= maxSize && orientation != UIImageOrientationDown &&
-		orientation != UIImageOrientationLeft && orientation != UIImageOrientationRight &&
-		orientation != UIImageOrientationLeftMirrored && orientation != UIImageOrientationRightMirrored &&
-		orientation != UIImageOrientationUpMirrored && orientation != UIImageOrientationDownMirrored)
-		return image;
-	
-	CGFloat scaleX = 1.0f;
-	CGFloat scaleY = 1.0f;
-	if (width > maxSize)
-		scaleX = maxSize / width;
-	if (height > maxSize)
-		scaleY = maxSize / height;
-	
-	// Credit: https://github.com/mbcharbonneau/UIImage-Categories/blob/master/UIImage%2BAlpha.m
-	CGImageAlphaInfo alpha = CGImageGetAlphaInfo(image.CGImage);
-	BOOL hasAlpha = alpha == kCGImageAlphaFirst || alpha == kCGImageAlphaLast || alpha == kCGImageAlphaPremultipliedFirst || alpha == kCGImageAlphaPremultipliedLast;
-	
-	CGFloat scaleRatio = scaleX < scaleY ? scaleX : scaleY;
-	CGRect imageRect = CGRectMake(0, 0, width * scaleRatio, height * scaleRatio);
-	UIGraphicsBeginImageContextWithOptions(imageRect.size, !hasAlpha, image.scale);
-	[image drawInRect:imageRect];
-	image = UIGraphicsGetImageFromCurrentImageContext();
-	UIGraphicsEndImageContext();
-	
-	return image;
++ (UIImage *)fixImage:(UIImage *)image size:(CGSize)size {
+    CGFloat width = CGRectGetWidth([UIScreen mainScreen].bounds);
+    if (CGSizeEqualToSize(size, CGSizeZero)) size = CGSizeMake(width, width);
+    if (image.size.width <= size.width && image.size.height <= size.height) return self;
+    CGFloat w_scale = size.width/image.size.width;
+    CGFloat h_sacle = size.height/image.size.height;
+    CGFloat m_s = MIN(w_scale, h_sacle);
+    size = CGSizeMake(image.size.width * m_s, image.size.height * m_s);
+    UIGraphicsBeginImageContext(size);
+    [image drawInRect:CGRectMake(0.0, 0.0, size.width, size.height)];
+    UIImage *resultImg = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return resultImg;
 }
 
 + (char *)loadImageAtPath:(NSString *)path tempFilePath:(NSString *)tempFilePath maximumSize:(int)maximumSize {
@@ -306,16 +289,13 @@ static int imagePickerState = 0; // 0 -> none, 1 -> showing, 2 -> finished
 	if (image == nil)
 		return [self getCString:path];
 	
-	UIImage *scaledImage = [self scaleImage:image maxSize:maximumSize];
-	if (conversionNeeded || scaledImage != image) {
+	UIImage *scaledImage = [self fixImage:image size:CGSizeMake(400.0, 300.0)];
+	
 		if (![UIImagePNGRepresentation(scaledImage) writeToFile:tempFilePath atomically:YES]) {
 			NSLog(@"Error creating scaled image");
 			return [self getCString:path];
 		}
-		
-		return [self getCString:tempFilePath];
-	}
-	else
+
 		return [self getCString:path];
 }
 
@@ -366,8 +346,8 @@ static int imagePickerState = 0; // 0 -> none, 1 -> showing, 2 -> finished
 			if (path == nil) {
 				//NSLog(@"Attempting to save the image without metadata as fallback");
 				
-				if ((saveAsJPEG && [UIImageJPEGRepresentation([self scaleImage:image maxSize:cameraMaxImageSize], 1.0) writeToFile:pickedMediaSavePath atomically:YES]) ||
-					(!saveAsJPEG && [UIImagePNGRepresentation([self scaleImage:image maxSize:cameraMaxImageSize]) writeToFile:pickedMediaSavePath atomically:YES]) )
+				if ((saveAsJPEG && [UIImageJPEGRepresentation([self fixImage:image size:CGSizeMake(400.0, 300.0)], 1.0) writeToFile:pickedMediaSavePath atomically:YES]) ||
+					(!saveAsJPEG && [UIImagePNGRepresentation([self fixImage:image size:CGSizeMake(400.0, 300.0)]) writeToFile:pickedMediaSavePath atomically:YES]) )
 					path = pickedMediaSavePath;
 				else {
 					NSLog(@"Error saving image without metadata");

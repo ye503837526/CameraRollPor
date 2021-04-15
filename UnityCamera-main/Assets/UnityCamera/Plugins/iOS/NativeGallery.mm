@@ -154,19 +154,29 @@ static int imagePickerState = 0; // 0 -> none, 1 -> showing (always in this stat
 // Credit: https://stackoverflow.com/a/32989022/2373034
 + (int)requestPermissionNew {
 	PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatus];
-	
+
 	if (status == PHAuthorizationStatusAuthorized) {
 		return 1;
 	}
 	else if (status == PHAuthorizationStatusNotDetermined) {
 		__block BOOL authorized = NO;
-		
-		dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-		[PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus status) {
-			authorized = (status == PHAuthorizationStatusAuthorized);
-			dispatch_semaphore_signal(sema);
-		}];
-		dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+        dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+		 if (@available(iOS 14.0, *)) {
+			  [PHPhotoLibrary requestAuthorizationForAccessLevel:PHAccessLevelAddOnly handler:^(PHAuthorizationStatus status) {
+                authorized = (status == PHAuthorizationStatusAuthorized || status == PHAuthorizationStatusLimited);
+				dispatch_semaphore_signal(sema);
+            }];
+            dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+		 }
+		 else
+		 {
+			[PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus status) {
+				authorized = (status == PHAuthorizationStatusAuthorized);
+				dispatch_semaphore_signal(sema);
+			}];
+			dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+		 }
+
 		
 		if (authorized)
 			return 1;
@@ -177,6 +187,9 @@ static int imagePickerState = 0; // 0 -> none, 1 -> showing (always in this stat
 		return 0;
 	}
 }
+
+ 
+
 
 // Credit: https://stackoverflow.com/a/22056664/2373034
 #pragma clang diagnostic push
@@ -322,13 +335,13 @@ static int imagePickerState = 0; // 0 -> none, 1 -> showing (always in this stat
 	
 	imagePickerState = 1;
 	UIViewController *rootViewController = UnityGetGLViewController();
-	if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPhone) // iPhone
+//	if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPhone) // iPhone
 		[rootViewController presentViewController:imagePicker animated:YES completion:^{ imagePickerState = 0; }];
-	else { // iPad
-		popup = [[UIPopoverController alloc] initWithContentViewController:imagePicker];
-		popup.delegate = self;
-		[popup presentPopoverFromRect:CGRectMake( rootViewController.view.frame.size.width / 2, rootViewController.view.frame.size.height / 2, 1, 1 ) inView:rootViewController.view permittedArrowDirections:0 animated:YES];
-	}
+//	else { // iPad
+//		popup = [[UIPopoverController alloc] initWithContentViewController:imagePicker];
+//		popup.delegate = self;
+//		[popup presentPopoverFromRect:CGRectMake( rootViewController.view.frame.size.width / 2, rootViewController.view.frame.size.height / 2, 1, 1 ) inView:rootViewController.view permittedArrowDirections:0 animated:YES];
+//	}
 }
 
 + (int)isMediaPickerBusy {
@@ -504,98 +517,18 @@ static int imagePickerState = 0; // 0 -> none, 1 -> showing (always in this stat
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 + (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary *)info {
+    NSString *path = [NSHomeDirectory() stringByAppendingPathComponent:@"/Documents/temp.png"];
+    
 	if ([info[UIImagePickerControllerMediaType] isEqualToString:(NSString *)kUTTypeImage]) { // image picked
-		// On iOS 8.0 or later, try to obtain the raw data of the image (which allows picking gifs properly or preserving metadata)
-		if ([[[UIDevice currentDevice] systemVersion] compare:@"8.0" options:NSNumericSearch] != NSOrderedAscending) {
-			PHAsset *asset = nil;
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 110000
-			if ([[[UIDevice currentDevice] systemVersion] compare:@"11.0" options:NSNumericSearch] != NSOrderedAscending)
-				asset = info[UIImagePickerControllerPHAsset];
-#endif
-			
-			if (asset == nil) {
-				NSURL *mediaUrl = info[UIImagePickerControllerReferenceURL] ?: info[UIImagePickerControllerMediaURL];
-				if (mediaUrl != nil)
-					asset = [[PHAsset fetchAssetsWithALAssetURLs:[NSArray arrayWithObject:mediaUrl] options:nil] firstObject];
-			}
-			
-			if (asset != nil) {
-				PHImageRequestOptions *options = [[PHImageRequestOptions alloc] init];
-				options.synchronous = YES;
-				options.version = PHImageRequestOptionsVersionCurrent;
-				
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000
-				if ([[[UIDevice currentDevice] systemVersion] compare:@"13.0" options:NSNumericSearch] != NSOrderedAscending) {
-					[[PHImageManager defaultManager] requestImageDataAndOrientationForAsset:asset options:options resultHandler:^(NSData *imageData, NSString *dataUTI, CGImagePropertyOrientation orientation, NSDictionary *imageInfo) {
-						if (imageData != nil)
-							[self trySaveSourceImage:imageData withInfo:imageInfo];
-						else
-							NSLog(@"Couldn't fetch raw image data");
-					}];
-				}
-				else {
-#endif
-					[[PHImageManager defaultManager] requestImageDataForAsset:asset options:options resultHandler:^(NSData *imageData, NSString *dataUTI, UIImageOrientation orientation, NSDictionary *imageInfo) {
-						if (imageData != nil)
-							[self trySaveSourceImage:imageData withInfo:imageInfo];
-						else
-							NSLog(@"Couldn't fetch raw image data");
-					}];
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000
-				}
-#endif
-			}
-		}
-		
-		if (resultPath == nil) {
-			// Temporarily save image as PNG
-			UIImage *image = info[UIImagePickerControllerOriginalImage];
-			if (image != nil) {
-				resultPath = [pickedMediaSavePath stringByAppendingPathExtension:@"png"];
-				if (![UIImagePNGRepresentation(image) writeToFile:resultPath atomically:YES]) {
-					NSLog(@"Error creating PNG image");
-					resultPath = nil;
-				}
-			}
-			else
-				NSLog(@"Error fetching original image from picker");
-		}
-	}
-	else { // video picked
-		NSURL *mediaUrl = info[UIImagePickerControllerMediaURL] ?: info[UIImagePickerControllerReferenceURL];
-		if (mediaUrl == nil)
-			resultPath = nil;
-		else {
-			resultPath = [mediaUrl path];
-			
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000
-			// On iOS 13, picked file becomes unreachable as soon as the UIImagePickerController disappears,
-			// in that case, copy the video to a temporary location
-			if ([[[UIDevice currentDevice] systemVersion] compare:@"13.0" options:NSNumericSearch] != NSOrderedAscending) {
-				NSError *error;
-				NSString *newPath = [pickedMediaSavePath stringByAppendingPathExtension:[resultPath pathExtension]];
-				
-				if (![[NSFileManager defaultManager] fileExistsAtPath:newPath] || [[NSFileManager defaultManager] removeItemAtPath:newPath error:&error]) {
-					if ([[NSFileManager defaultManager] copyItemAtPath:resultPath toPath:newPath error:&error])
-						resultPath = newPath;
-					else {
-						NSLog(@"Error copying video: %@", error);
-						resultPath = nil;
-					}
-				}
-				else {
-					NSLog(@"Error deleting existing video: %@", error);
-					resultPath = nil;
-				}
-			}
-#endif
-		}
-	}
-	
+		// On iOS 8.0 or later, try to obtain the raw data of the image (which allows
+        UIImage *image = [info objectForKey:UIImagePickerControllerOriginalImage];
+       BOOL result = [UIImagePNGRepresentation(image) writeToURL:[NSURL fileURLWithPath:path] atomically:YES];
+        NSLog(@"result = %@", @(result));
+    }
 	popup = nil;
 	imagePicker = nil;
 	imagePickerState = 2;
-	UnitySendMessage("NGMediaReceiveCallbackiOS", "OnMediaReceived", [self getCString:resultPath]);
+	UnitySendMessage("NGMediaReceiveCallbackiOS", "OnMediaReceived", [self getCString:path]);
 	
 	[picker dismissViewControllerAnimated:NO completion:nil];
 }
